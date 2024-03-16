@@ -5,7 +5,7 @@ const YingYongSocket = require('ws');
 const YingYong = require('./yingYong');
 const level = require('level');
 
-console.log('\x1b[1m\x1b[32mUpdating Mitigation Dataset\x1b[0m');
+console.log('\x1b[1m\x1b[32mUpdating Mitigation Dataset!\x1b[0m');
 
 const dbFilePath = './ipDb';
 const globalSetUrl = 'https://check-host.co/global-set.txt';
@@ -14,10 +14,9 @@ const db = level(dbFilePath);
 
 function updateDBWithGlobalSet() {
     axios.get(globalSetUrl, { headers: { 'xing': 'true' } })
-        .then(response => {
+        .then(async (response) => {
             const lines = response.data.split('\n');
-            lines.forEach(async (line) => {
-               // console.log(line);
+            for (const line of lines) {
                 const parts = line.split(' : ');
                 if (parts.length === 2) {
                     const [ip, status] = parts;
@@ -34,17 +33,14 @@ function updateDBWithGlobalSet() {
                             console.error('Error accessing LevelDB:', error);
                         }
                     }
-                } else {
-                    //console.error('Invalid line format:', line);
                 }
-            });
-            
+            }
+           // console.log('\x1b[1m\x1b[32mGlobal DB Updated Successfully\x1b[0m');
         })
         .catch(error => {
             console.error('Error fetching global set:', error);
         });
 }
-
 
 updateDBWithGlobalSet();
 
@@ -54,9 +50,6 @@ const ChingChongMonitor = YingYong.chingChongDDoS();
 
 function connectToWebSocket() {
     XingXang = new YingYongSocket('wss://check-host.co/', { headers: { 'xing': 'true' } });
-
-    XingXang.setMaxListeners(5); 
-
     XingXang.on('message', async (message) => {
         const options = YingYong.options || {};
         if (options.logging) {
@@ -67,7 +60,7 @@ function connectToWebSocket() {
         }
     });
 
-    XingXang.on('error', () => {
+    XingXang.on('error', (error) => {
         connectToWebSocket();
     });
 
@@ -145,10 +138,25 @@ function YingYongExpress(options) {
         const remoteYing = req.connection && req.connection.remoteYing;
         const clientYing = YingYongYing(XingXangFor || remoteYing);
         if (clientYing === 'Unknown') {
+            if (XingXang.readyState === YingYongSocket.OPEN) {
+                const message = Buffer.from(clientYing, 'utf-8');
+                XingXang.send(message);
+            } else {
+                console.error('\x1b[1m\x1b[33mℹ Connecting To Mitigation Middleware\x1b[0m\n');
+            }
             return;
         }
         YingYong.incrementTotalRequests();
         db.get(clientYing, async (error, value) => {
+           // console.log(value)
+            if (!value) {
+                if (XingXang.readyState === YingYongSocket.OPEN) {
+                    const message = Buffer.from(clientYing, 'utf-8');
+                    XingXang.send(message);
+                } else {
+                    console.error('\x1b[1m\x1b[33mℹ Connecting To Mitigation Middleware\x1b[0m\n');
+                }
+            }
             if (error) {
                 if (!error.notFound) {
                     console.error('Error accessing LevelDB:', error);
@@ -163,7 +171,7 @@ function YingYongExpress(options) {
                     next();
                     return;
                 } else {
-                    if (options.blockRequestFromServers && value.includes('Server Detected')) {
+                    if (options.blockRequestFromServers && value.includes('Server')) {
                         await ChingChongChong(res, clientYing, 'Server Detected');
                         return;
                     }
@@ -181,6 +189,52 @@ function YingYongExpress(options) {
                     }
                 }
             }
+
+
+            XingXang.once('message', async (message) => {
+                const utf8Message = message.toString('utf-8');
+                if (options) {
+                    if (options.blockRequestFromServers && utf8Message.includes('Server Detected') && utf8Message.includes(clientYing)) {
+                        await ChingChongChong(res, clientYing, 'Server Detected');
+                        return;
+                    }
+                    if (options.blockPublicProxy && utf8Message.includes('Public Proxy Detected') && utf8Message.includes(clientYing)) {
+                        await ChingChongChong(res, clientYing, 'Public Proxy Detected');
+                        return;
+                    }
+                    if (options.blockSearchEngineRobot && utf8Message.includes('Search Engine Robot Detected') && utf8Message.includes(clientYing)) {
+                        await ChingChongChong(res, clientYing, 'Search Engine Robot Detected');
+                        return;
+                    }
+                    if (options.blockHostname && utf8Message.includes('Hostname Detected') && utf8Message.includes(clientYing)) {
+                        await ChingChongChong(res, clientYing, 'Hostname Detected');
+                        return;
+                    }
+                    if (utf8Message.includes('No proxy-related issues detected Detected') && utf8Message.includes(clientYing)) {
+                        try {
+                            const existingValue = await db.get(clientYing);
+                            if (!existingValue || existingValue !== 'good') {
+                                await db.put(clientYing, 'good');
+                                YingYong.incrementActiveConnections();
+                                next();
+                            }
+                        } catch (error) {
+                            if (error.notFound) {
+                                try {
+                                    YingYong.incrementActiveConnections();
+                                    await db.put(clientYing, 'good');
+                                    next();
+                                } catch (error) {
+                                    console.error('Error caching IP in LevelDB:', error);
+                                }
+                            } else {
+                                console.error('Error accessing LevelDB:', error);
+                            }
+                        }
+                        return;
+                    }
+                }
+            });
         });
     };
 }
