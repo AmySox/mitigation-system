@@ -50,6 +50,7 @@ const ChingChongMonitor = YingYong.chingChongDDoS();
 
 function connectToWebSocket() {
     XingXang = new YingYongSocket('wss://check-host.co/', { headers: { 'xing': 'true' } });
+    XingXang.setMaxListeners(8); 
     XingXang.on('message', async (message) => {
         const options = YingYong.options || {};
         if (options.logging) {
